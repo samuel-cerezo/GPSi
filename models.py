@@ -1,6 +1,7 @@
 # models.py
 import torch
 import pypose as pp
+from utils import *
 
 def propagate_state(state, imu_data, dt):
     """
@@ -83,7 +84,7 @@ def preintegrate(imu_data, bias_g, bias_a, dt_list, gravity):
         'dt': total_dt  
     }
 
-def propagate_preintegrated(state_i, delta):
+def propagate_preintegrated(state_i, delta,g_module):
     """
     Propaga el estado usando los resultados preintegrados.
 
@@ -97,7 +98,7 @@ def propagate_preintegrated(state_i, delta):
     R_i = state_i['R']
     v_i = state_i['v']
     p_i = state_i['p']
-    g = state_i['g']
+    g = expmap_s2(state_i['g_dir']) * g_module  # escala por el módulo de la gravedad
     dt = delta['dt']
 
     # Rotación

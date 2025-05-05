@@ -8,15 +8,17 @@ from compute_errors import *
 from plot import *
 import matplotlib.pyplot as plt
 import time
+from utils import *
 
 # ========= CONFIGURACIÓN =========
 MAX_GPS_MEASUREMENTS = 900
+g_module = 9.81
 gps_noise_std = 0.04
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 torch.manual_seed(42)
 
 # ========= CARGA DE DATOS =========
-data = load_euroc_data('/Users/samucerezo/dev/src/repos/GPSi/datasets', gps_noise_std, device=device)
+data = load_euroc_data('/home/samuel/dev/repos/GPSi/datasets/MH_01_easy', gps_noise_std, device=device)
 
 # ========= ESTADO INICIAL =========
 state = {
@@ -25,7 +27,7 @@ state = {
     'R': pp.identity_SO3(device=device),
     'bias_g': torch.tensor([0.1, 0.1, 0.1], device=device),  # Bias de giroscopio como parámetro optimizable
     'bias_a': torch.tensor([0.1, 0.1, 0.1], device=device),  # Bias de acelerómetro como parámetro optimizable
-    'g': torch.tensor([0, 0, -9.51], device=device)  # Gravedad como parámetro optimizable
+    'g_dir': torch.tensor([0.0, 0.0], device=device, requires_grad=True)  # perturbación
 }
 
 states = [state]
@@ -38,9 +40,10 @@ for k in range(MAX_GPS_MEASUREMENTS - 1):
     t_start = data['gt_time'][k]
     t_end = data['gt_time'][k + 1]
 
-    imu_ij = get_imu_between(t_start, t_end, data, data['imu_time'],state['bias_g'], state['bias_a'])
-    delta = preintegrate(imu_ij, state['bias_g'], state['bias_a'], imu_ij['dt'], gravity=state['g'])
-    state = propagate_preintegrated(state, delta)
+    imu_ij = get_imu_between(t_start, t_end, data, data['imu_time'], state['bias_g'], state['bias_a'])
+    g_vector = expmap_s2(state['g_dir']) * g_module  # escala por el módulo de la gravedad
+    delta = preintegrate(imu_ij, state['bias_g'], state['bias_a'], imu_ij['dt'], gravity=g_vector)
+    state = propagate_preintegrated(state, delta, g_module=g_module)
 
     states.append(state)
     timestamps.append(t_end)
@@ -71,12 +74,12 @@ for i in range(len(states)):
         'R': states[i]['R'].detach().clone().requires_grad_(),
         'bias_g': states[i]['bias_g'].requires_grad_(),  # Se usa el bias_g estimado que es parámetro optimizable
         'bias_a': states[i]['bias_a'].requires_grad_(),  # Se usa el bias_a estimado que es parámetro optimizable
-        'g': states[i]['g'].requires_grad_()  # Se usa el vector gravedad estimado que es parámetro optimizable
+        'g_dir': torch.tensor([0.0, 0.0], device=device, requires_grad=True)        
     })
 
 # ========= OPTIMIZACIÓN =========
 params = [p['p'] for p in est_states] + [p['v'] for p in est_states] + [p['R'] for p in est_states] + \
-         [p['bias_g'] for p in est_states] + [p['bias_a'] for p in est_states] + [p['g'] for p in est_states]
+         [p['bias_g'] for p in est_states] + [p['bias_a'] for p in est_states] + [p['g_dir'] for p in est_states]
 
 optimizer = torch.optim.Adam(params, lr=1e-2)
 
@@ -93,21 +96,21 @@ smoothed_np = np.vstack([pos.cpu().numpy() for pos in smoothed_gps])  # Apilamos
 # Convertimos las mediciones GPS a NumPy
 gps_np = gps_measurements.cpu().numpy()
 
-# Graficar
-fig = plt.figure(figsize=(10, 7))
-ax = fig.add_subplot(111, projection='3d')
+# ---------------------------------  Graficar -------------------------------------
+#fig = plt.figure(figsize=(10, 7))
+#ax = fig.add_subplot(111, projection='3d')
 
 # Graficamos las mediciones GPS y las suavizadas
-ax.plot(gps_np[:, 0], gps_np[:, 1], gps_np[:, 2], label='GPS Medido', linestyle=':', linewidth=1)
-ax.plot(smoothed_np[:, 0], smoothed_np[:, 1], smoothed_np[:, 2], label='GPS Suavizado (Kalman)', linewidth=2)
+#ax.plot(gps_np[:, 0], gps_np[:, 1], gps_np[:, 2], label='GPS Medido', linestyle=':', linewidth=1)
+#ax.plot(smoothed_np[:, 0], smoothed_np[:, 1], smoothed_np[:, 2], label='GPS Suavizado (Kalman)', linewidth=2)
 
-ax.set_title('Comparación: GPS vs Kalman Smoothed')
-ax.set_xlabel('X (m)')
-ax.set_ylabel('Y (m)')
-ax.set_zlabel('Z (m)')
-ax.legend()
-plt.tight_layout()
-plt.show()
+#ax.set_title('Comparación: GPS vs Kalman Smoothed')
+#ax.set_xlabel('X (m)')
+#ax.set_ylabel('Y (m)')
+#ax.set_zlabel('Z (m)')
+#ax.legend()
+#plt.tight_layout()
+#plt.show()
 
 # Listas para almacenar la evolución de los parámetros
 bias_g_history = []
@@ -126,8 +129,9 @@ for epoch in range(200):
     
     for k in range(len(states) - 1):
         i, j = k, k + 1
+        g_vector = expmap_s2(state['g_dir']) * g_module  # escala por el módulo de la gravedad
         imu_ij = get_imu_between(timestamps[i], timestamps[j], data, data['imu_time'],est_states[i]['bias_g'], est_states[i]['bias_a'])
-        delta = preintegrate(imu_ij, est_states[i]['bias_g'], est_states[i]['bias_a'], imu_ij['dt'], gravity=est_states[i]['g'])
+        delta = preintegrate(imu_ij, est_states[i]['bias_g'], est_states[i]['bias_a'], imu_ij['dt'], gravity=g_vector)
         #dt = timestamps[j] - timestamps[i]
         dt = dt_gps
         r_pre = imu_residual_preint(est_states[i], est_states[j], delta, dt)
