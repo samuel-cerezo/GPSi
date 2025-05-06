@@ -58,8 +58,16 @@ def biasGYR_residual(state_i, state_j):
     bg_i = state_i['bias_g']
     bg_j = state_j['bias_g']
     res = bg_j - bg_i
-    return res 
+    return res
 
+def biasACC_residual(state_i, state_j):
+    """
+    Penaliza cambios bruscos entre velocidades consecutivas.
+    """
+    bg_i = state_i['bias_g']
+    bg_j = state_j['bias_g']
+    res = bg_j - bg_i
+    return res 
 
 def gps_residual(state_i, state_j, gps_i, gps_j, k):
     """

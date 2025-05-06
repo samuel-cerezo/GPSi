@@ -2,6 +2,8 @@
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
+import pypose as pp
+
 
 def compute_position_errors(estimated_positions, gt_positions):
     """
@@ -68,3 +70,31 @@ def compute_ate(est_values, gt_values):
     errors = [torch.norm(est - gt) for est, gt in zip(est_values, gt_values)]
     ate = torch.stack(errors).mean()
     return ate.item()
+
+
+def compute_rotation_rmse(est_states, gt_quaternions):
+    """
+    Calcula el RMSE de rotación angular en grados entre rotaciones estimadas y ground truth (en quaterniones).
+    """
+    errors = []
+
+    for i in range(len(est_states)):
+        # Rotación estimada (PyTorch tensor 3x3)
+        R_est = est_states[i]['R'].matrix()[0]
+
+        # Quaternion GT → SO3 → matriz de rotación
+        q_gt = gt_quaternions[i]  # (4,)
+        R_gt = pp.SO3(q_gt.unsqueeze(0)).matrix()[0]
+
+        # Error de rotación
+        R_err = R_est @ R_gt.T
+        trace = torch.trace(R_err).clamp(-1.0, 3.0)
+
+        # Ángulo de rotación en grados
+        angle_rad = torch.acos((trace - 1) / 2.0)
+        angle_deg = torch.rad2deg(angle_rad).item()
+        errors.append(angle_deg)
+
+    # RMSE final
+    rmse_deg = np.sqrt(np.mean(np.square(errors)))
+    return rmse_deg

@@ -3,7 +3,7 @@ import pandas as pd
 import torch
 import numpy as np
 
-def load_euroc_data(path, gps_noise_std, device='cpu'):
+def load_euroc_data(path, gps_noise_std=0.1, device='cpu'):
     """
     Carga datos de EuRoC y simula mediciones de GPS ruidoso.
     

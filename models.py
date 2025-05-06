@@ -84,7 +84,7 @@ def preintegrate(imu_data, bias_g, bias_a, dt_list, gravity):
         'dt': total_dt  
     }
 
-def propagate_preintegrated(state_i, delta,g_module):
+def propagate_preintegrated(state_i, delta):
     """
     Propaga el estado usando los resultados preintegrados.
 
@@ -98,7 +98,7 @@ def propagate_preintegrated(state_i, delta,g_module):
     R_i = state_i['R']
     v_i = state_i['v']
     p_i = state_i['p']
-    g = expmap_s2(state_i['g_dir']) * g_module  # escala por el módulo de la gravedad
+    g = state_i['g']
     dt = delta['dt']
 
     # Rotación
@@ -218,7 +218,7 @@ def add_gps_anchor_residual(loss, est_states, gps_measurements, k0, window_size=
     loss += weight * (r_anchor ** 2).mean()
     return loss
 
-def kalman_filter_gps(gps_measurements, dt=0.01, gps_var=0.04):
+def kalman_filter_gps(gps_measurements, gps_var, dt=0.01):
     device = gps_measurements[0].device
     n = len(gps_measurements)
 
