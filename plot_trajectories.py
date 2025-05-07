@@ -60,14 +60,16 @@ def plot_results(est_states, gps_measurements, data, MAX_GPS_MEASUREMENTS):
     gps_positions = torch.stack([gps_measurements[i].clone().detach().to(device) for i in range(MAX_GPS_MEASUREMENTS)]).cpu().numpy()
     gt_positions = torch.stack([data['gt_p'][i].clone().detach().to(device) for i in range(MAX_GPS_MEASUREMENTS)]).cpu().numpy()
 
+
     # Crear figura y ejes 3D
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
 
-    # Graficar trayectorias
-    ax.scatter(gt_positions[:, 0], gt_positions[:, 1], gt_positions[:, 2], label='GT', s=5)
-    ax.scatter(gps_positions[:, 0], gps_positions[:, 1], gps_positions[:, 2], label='GPS (ruido)', s=5)
-    ax.scatter(estimated_positions[:, 0], estimated_positions[:, 1], estimated_positions[:, 2], label='Estimado', s=5)
+    # Graficar trayectorias como líneas conectadas
+    ax.plot(gt_positions[:, 0], gt_positions[:, 1], gt_positions[:, 2], label='GT')
+    #ax.plot(gps_positions[:, 0], gps_positions[:, 1], gps_positions[:, 2], label='GPS (ruido)')
+    ax.plot(estimated_positions[:, 0], estimated_positions[:, 1], estimated_positions[:, 2], label='Estimado')
+
     # Etiquetas y estilo
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')
@@ -76,6 +78,8 @@ def plot_results(est_states, gps_measurements, data, MAX_GPS_MEASUREMENTS):
     ax.legend()
     plt.tight_layout()
     plt.show()
+
+  
 
     # Velocidades
     estimated_velocities = torch.stack([est_states[i]['v'].detach().cpu() for i in range(MAX_GPS_MEASUREMENTS)])

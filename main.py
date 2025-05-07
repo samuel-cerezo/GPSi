@@ -11,8 +11,10 @@ import time
 import numpy as np
 
 # ========= CONFIGURACIÓN =========
-MAX_GPS_MEASUREMENTS = 500
-gps_noise_std = 0.1
+MAX_GPS_MEASUREMENTS = 100
+USE_Twb = True
+MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT = 10
+gps_noise_std = 0.01
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 torch.manual_seed(42)
@@ -25,7 +27,7 @@ bias_g_init = torch.tensor(np.random.normal(0, gyro_bias_std, 3), dtype=torch.fl
 bias_a_init = torch.tensor(np.random.normal(0, accel_bias_std, 3), dtype=torch.float32, device=device)
 
 # ========= CARGA DE DATOS =========
-data = load_euroc_data('/home/samuel/dev/repos/GPSi/datasets/EuRoc/MH_05_difficult', gps_noise_std, device=device)
+data = load_euroc_data('/home/samuel/dev/repos/GPSi/datasets/EuRoc/MH_01_easy', gps_noise_std, device=device)
 
 # ========= ESTADO INICIAL =========
 state = {
@@ -64,22 +66,31 @@ for i in range(len(states)):
     q_xyzw = torch.cat([data['gt_q'][i, 1:], data['gt_q'][i, 0:1]], dim=0)  # [x, y, z, w]
 
     est_states.append({
-        'p': (gps_measurements[i] + 0.001 * torch.randn(3, device=device)).requires_grad_(),
-        'v': (gt_velocities[i] + 0.001 * torch.randn(3, device=device)).requires_grad_(),
-        'R': pp.SO3(q_xyzw.unsqueeze(0)).detach().clone().requires_grad_(),
-        'bias_g': (states[i]['bias_g'] + 0.001 * torch.randn(3, device=device)).requires_grad_(),
-        'bias_a': (states[i]['bias_a'] + 0.001 * torch.randn(3, device=device)).requires_grad_(),
+        'p': (gps_measurements[i] + 0.00 * torch.randn(3, device=device)).requires_grad_(),
+        'v': (gt_velocities[i] + 0.00 * torch.randn(3, device=device)).requires_grad_(),
+        'R': states[i]['R'].detach().clone().requires_grad_(), #'R': pp.SO3(q_xyzw.unsqueeze(0)).detach().clone().requires_grad_(),
+        'bias_g': (states[i]['bias_g'] + 0.01 * torch.randn(3, device=device)).requires_grad_(),
+        'bias_a': (states[i]['bias_a'] + 0.01 * torch.randn(3, device=device)).requires_grad_(),
         'g': (states[i]['g'] + 0.001 * torch.randn(3, device=device)).requires_grad_()
     })
 
-# ========= OPTIMIZACIÓN =========
-params = [p['p'] for p in est_states] + [p['v'] for p in est_states] + [p['R'] for p in est_states] + \
-         [p['bias_g'] for p in est_states] + [p['bias_a'] for p in est_states] + [p['g'] for p in est_states]
 
-optimizer = torch.optim.Adam(params, lr=1e-3)
+# ========= TRANSFORMACIÓN GLOBAL T_w_b =========
+T_w_b = {
+    'R': pp.identity_SO3(device=device).detach().clone().requires_grad_(),
+    't': torch.zeros(3, device=device, requires_grad=True)
+}
+
+# ========= AGREGAR A PARÁMETROS =========
+params = [p['p'] for p in est_states] + [p['v'] for p in est_states] + [p['R'] for p in est_states] + \
+         [p['bias_g'] for p in est_states] + [p['bias_a'] for p in est_states] + [p['g'] for p in est_states] + \
+         [T_w_b['R'], T_w_b['t']]
+
+optimizer = torch.optim.Adam(params, lr=1e-2)
 
 dt_gps = (data['gt_time'][1] - data['gt_time'][0]).item()
 smoothed_gps = kalman_filter_gps(gps_measurements, gps_noise_std, dt_gps)
+
 gps_measurements = torch.stack(gps_measurements)
 
 bias_g_history = []
@@ -100,27 +111,41 @@ for epoch in range(1000):
     alpha_gps = 1
 
     smoothed_gps = kalman_filter_gps(gps_measurements, gps_noise_std, dt_gps)
-
+    
     for k in range(len(states) - 1):
         i, j = k, k + 1
         imu_ij = get_imu_between(timestamps[i], timestamps[j], data, data['imu_time'],
                                  est_states[i]['bias_g'], est_states[i]['bias_a'])
         delta = preintegrate(imu_ij, est_states[i]['bias_g'], est_states[i]['bias_a'],
-                             imu_ij['dt'], gravity=est_states[i]['g'])
+                             imu_ij['dt'], gravity=est_states[i]['g'])  #Estos deltas estan en coordenadas de mundo
         dt = dt_gps
         r_pre = imu_residual_preint(est_states[i], est_states[j], delta, dt)
-        loss += 10 * (r_pre ** 2).mean()
+        loss += 100 * (r_pre ** 2).mean()
 
     for k in range(len(est_states) - 1):
+
         r_vel = velocity_smoothness_residual(est_states[k], est_states[k + 1])
         r_bias_g = biasGYR_residual(est_states[k], est_states[k + 1])
         r_bias_a = biasACC_residual(est_states[k], est_states[k + 1])
-        delta_est = est_states[k + 1]['p'] - est_states[k]['p']
-        delta_gps = smoothed_gps[k + 1] - smoothed_gps[k]
-        r_gps_disp = delta_est - delta_gps
-        r_gps_anchor = est_states[k]['p'] - smoothed_gps[k]
 
-        loss += alpha_gps * ((r_gps_disp ** 2).mean() + (r_gps_anchor ** 2).mean())
+
+        if (k >= MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT) and (USE_Twb):
+            p_i_world = T_w_b['R'].Act(est_states[k]['p']) + T_w_b['t']
+            p_j_world = T_w_b['R'].Act(est_states[k + 1]['p']) + T_w_b['t']
+            delta_est = p_j_world - p_i_world
+            delta_gps = smoothed_gps[k + 1] - smoothed_gps[k]
+            r_gps_disp = delta_est - delta_gps
+            r_gps_anchor = T_w_b['R'].Act(est_states[k]['p']) + T_w_b['t'] - smoothed_gps[k]
+            loss += alpha_gps * ((r_gps_disp ** 2).mean() +  (r_gps_anchor ** 2).mean())
+        else:
+            delta_est = est_states[k + 1]['p'] - est_states[k]['p']
+            delta_gps = smoothed_gps[k + 1] - smoothed_gps[k]
+            r_gps_disp = delta_est - delta_gps
+            loss += alpha_gps * ( (r_gps_disp ** 2).mean() )
+        
+        #r_gps_anchor = est_states[k]['p'] - smoothed_gps[k]
+        #loss += alpha_gps * ((r_gps_disp ** 2).mean() + (r_gps_anchor ** 2).mean())
+ 
         #loss += 0.1 * (r_vel ** 2).mean()
         loss += 1 * (r_bias_g ** 2).mean()
         loss += 1 * (r_bias_a ** 2).mean()
@@ -152,37 +177,6 @@ for epoch in range(1000):
         best_loss = loss.item()
         epochs_no_improve = 0
 
-
-# ========= GRÁFICAS =========
-bias_g_history = np.array(bias_g_history)
-bias_a_history = np.array(bias_a_history)
-g_history = np.array(g_history)
-
-plt.figure(figsize=(10, 6))
-plt.subplot(311)
-plt.plot(bias_g_history[:, 0], label="bias_g X")
-plt.plot(bias_g_history[:, 1], label="bias_g Y")
-plt.plot(bias_g_history[:, 2], label="bias_g Z")
-plt.title("Bias Giroscopio")
-plt.legend()
-
-plt.subplot(312)
-plt.plot(bias_a_history[:, 0], label="bias_a X")
-plt.plot(bias_a_history[:, 1], label="bias_a Y")
-plt.plot(bias_a_history[:, 2], label="bias_a Z")
-plt.title("Bias Acelerómetro")
-plt.legend()
-
-plt.subplot(313)
-plt.plot(g_history[:, 0], label="g X")
-plt.plot(g_history[:, 1], label="g Y")
-plt.plot(g_history[:, 2], label="g Z")
-plt.title("Gravedad Estimada")
-plt.legend()
-
-plt.tight_layout()
-plt.show()
-
 # ========= RESULTADOS =========
 plot_results(est_states, gps_measurements, data, MAX_GPS_MEASUREMENTS)
 
@@ -202,4 +196,15 @@ print(f"✅ Tiempo total de ejecución: {elapsed:.6f} sec.")
 print(f"✅ RMSE posición: {rmse_pos:.6f} m")
 print(f"✅ ATE: {ate:.6f} m")
 print(f"✅ RMSE velocidad: {rmse_vel:.6f} m/s")
-#print(f"✅ RMSE rotación: {rot_rmse:.6f} deg")
+print(f"✅ RMSE rotación: {rot_rmse:.6f} deg")
+
+# ========= IMPRIMIR TRANSFORMACIÓN RÍGIDA FINAL =========
+R_final = T_w_b['R'].matrix().detach().cpu().numpy()
+t_final = T_w_b['t'].detach().cpu().numpy()
+
+print("\nTransformación rígida T_w_b final:")
+print("Rotación (matriz 3x3):")
+print(R_final)
+print("Traslación (vector 3x1):")
+print(t_final)
+

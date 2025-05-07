@@ -72,7 +72,7 @@ def compute_ate(est_values, gt_values):
     return ate.item()
 
 
-def compute_rotation_rmse(est_states, gt_quaternions):
+def compute_rotation_rmse2(est_states, gt_quaternions):
     """
     Calcula el RMSE de rotación angular en grados entre rotaciones estimadas y ground truth (en quaterniones).
     """
@@ -98,3 +98,19 @@ def compute_rotation_rmse(est_states, gt_quaternions):
     # RMSE final
     rmse_deg = np.sqrt(np.mean(np.square(errors)))
     return rmse_deg
+
+def compute_rotation_rmse(est_states, gt_quaternions):
+    errors = []
+    for i in range(len(est_states)):
+        R_est = est_states[i]['R'].matrix()
+        q_gt = gt_quaternions[i]
+        q_xyzw = torch.cat([q_gt[1:], q_gt[0:1]], dim=0)
+        R_gt = pp.SO3(q_xyzw.unsqueeze(0)).matrix()[0]
+
+        R_err = R_est @ R_gt.T
+        trace = torch.trace(R_err)
+        trace = trace.clamp(-1.0, 3.0)  # Asegura que esté en el dominio válido
+        angle = torch.acos((trace - 1) / 2)
+        errors.append(angle.item())
+
+    return np.sqrt(np.mean(np.square(errors)))
