@@ -13,8 +13,8 @@ import numpy as np
 # ========= CONFIGURACIÓN =========
 MAX_GPS_MEASUREMENTS = 100
 USE_Twb = True
-MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT = 10
-gps_noise_std = 0.01
+MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT = 20
+gps_noise_std = 0.1
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 torch.manual_seed(42)
@@ -27,7 +27,7 @@ bias_g_init = torch.tensor(np.random.normal(0, gyro_bias_std, 3), dtype=torch.fl
 bias_a_init = torch.tensor(np.random.normal(0, accel_bias_std, 3), dtype=torch.float32, device=device)
 
 # ========= CARGA DE DATOS =========
-data = load_euroc_data('/home/samuel/dev/repos/GPSi/datasets/EuRoc/MH_01_easy', gps_noise_std, device=device)
+data = load_euroc_data('/Users/samucerezo/dev/src/repos/GPSi/datasets', gps_noise_std, device=device)
 
 # ========= ESTADO INICIAL =========
 state = {
@@ -75,11 +75,34 @@ for i in range(len(states)):
     })
 
 
+# ========= Inicializacion TRANSFORMACIÓN GLOBAL T_w_b =========
+R_init = torch.tensor([
+    [ 9.8746e-01,  1.5601e-01,  2.4348e-02],
+    [-1.5605e-01,  9.8775e-01, -4.6277e-04],
+    [-2.4122e-02, -3.3424e-03,  9.9970e-01]
+], dtype=torch.float32, device=device)
+
+t_init = torch.tensor([0.306, 0.701, 0.108], dtype=torch.float32, device=device)
+
+R_init2 = torch.tensor([
+    [ 0.987487,  0.155897,  0.023802],
+    [-0.156059,  0.987734,  0.005131],
+    [-0.022710, -0.008782,  0.999704]
+], dtype=torch.float32, device=device)
+
+t_init2 = torch.tensor([-0.2827, -0.7223, -0.0927], dtype=torch.float32, device=device)
+
+T_w_b = {
+    'R': pp.mat2SO3(R_init.unsqueeze(0)).detach().clone().requires_grad_(),
+    't': t_init.detach().clone().requires_grad_()
+}
+
 # ========= TRANSFORMACIÓN GLOBAL T_w_b =========
 T_w_b = {
     'R': pp.identity_SO3(device=device).detach().clone().requires_grad_(),
     't': torch.zeros(3, device=device, requires_grad=True)
 }
+
 
 # ========= AGREGAR A PARÁMETROS =========
 params = [p['p'] for p in est_states] + [p['v'] for p in est_states] + [p['R'] for p in est_states] + \
@@ -207,4 +230,3 @@ print("Rotación (matriz 3x3):")
 print(R_final)
 print("Traslación (vector 3x1):")
 print(t_final)
-

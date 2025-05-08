@@ -2,5 +2,3 @@
 /.pytest_cache
 /__pycache__
 /datasets
-
-main_sota.py

@@ -100,7 +100,7 @@ def compute_rotation_rmse2(est_states, gt_quaternions):
     return rmse_deg
 
 def compute_rotation_rmse(est_states, gt_quaternions):
-    errors = []
+    angles = []
     for i in range(len(est_states)):
         R_est = est_states[i]['R'].matrix()
         q_gt = gt_quaternions[i]
@@ -109,8 +109,10 @@ def compute_rotation_rmse(est_states, gt_quaternions):
 
         R_err = R_est @ R_gt.T
         trace = torch.trace(R_err)
-        trace = trace.clamp(-1.0, 3.0)  # Asegura que esté en el dominio válido
-        angle = torch.acos((trace - 1) / 2)
-        errors.append(angle.item())
+        cos_theta = ((trace - 1.0) / 2.0).clamp(-1.0, 1.0)
+        angle = torch.acos(cos_theta)
+        angles.append(angle)
 
-    return np.sqrt(np.mean(np.square(errors)))
+    errors = torch.stack(angles)
+    return torch.sqrt(torch.mean(errors ** 2)).item()
+

@@ -2,6 +2,7 @@
 import torch
 import pypose as pp
 from utils import *
+import numpy as np
 
 def propagate_state(state, imu_data, dt):
     """
@@ -261,3 +262,40 @@ def kalman_filter_gps(gps_measurements, gps_var, dt=0.01):
         smoothed_positions.append(x[:3].clone())
 
     return smoothed_positions
+
+def compute_rigid_transform_torch(P_tensors, Q_tensors):
+    """
+    Calcula la transformación rígida (R, t) que alinea dos listas de tensores 3D.
+    
+    Args:
+        P_tensors (list of torch.Tensor): Lista de puntos estimados (Nx3).
+        Q_tensors (list of torch.Tensor): Lista de puntos de referencia (Nx3).
+    
+    Returns:
+        R (torch.Tensor): Matriz de rotación 3x3.
+        t (torch.Tensor): Vector de traslación 3x1.
+    """
+    assert len(P_tensors) == len(Q_tensors), "Los conjuntos deben tener la misma longitud."
+
+    P = torch.stack(P_tensors).cpu().numpy()
+    Q = torch.stack(Q_tensors).cpu().numpy()
+
+    centroid_P = np.mean(P, axis=0)
+    centroid_Q = np.mean(Q, axis=0)
+
+    P_centered = P - centroid_P
+    Q_centered = Q - centroid_Q
+
+    H = P_centered.T @ Q_centered
+    U, S, Vt = np.linalg.svd(H)
+
+    R_np = Vt.T @ U.T
+    if np.linalg.det(R_np) < 0:
+        Vt[-1, :] *= -1
+        R_np = Vt.T @ U.T
+
+    t_np = centroid_Q - R_np @ centroid_P
+    R = torch.tensor(R_np, dtype=torch.float32)
+    t = torch.tensor(t_np, dtype=torch.float32)
+
+    return R, t
