@@ -13,7 +13,7 @@ from plot import *
 import matplotlib.pyplot as plt
 
 #dataset_path = '/Users/samucerezo/dev/src/repos/GPSi/datasets'
-dataset_path = '/home/samuel/dev/repos/GPSi/datasets/EuRoc/V1_03_difficult'
+dataset_path = '/home/samuel/dev/repos/GPSi/datasets/EuRoc/MH_05_difficult'
 gps_noise_std = 0.1
 
 # Función para calcular la distancia recorrida
@@ -83,14 +83,10 @@ def run_experiment(dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps
         # Reordenar el quaternion [w, x, y, z] → [x, y, z, w]
         q_xyzw = torch.cat([data['gt_q'][i, 1:], data['gt_q'][i, 0:1]], dim=0)  # [x, y, z, w]
 
-        omega_noise = torch.randn(3, device=device) * 0.01  # pequeño ruido angular
-        omega_lie_noise = pp.LieTensor(omega_noise, ltype=pp.so3_type)
-        dR_noise = pp.Exp(omega_lie_noise)
-        
         est_states.append({
             'p': (gps_measurements[i] + 0.00 * torch.randn(3, device=device)).requires_grad_(),
             'v': (gt_velocities[i] + 0.00 * torch.randn(3, device=device)).requires_grad_(),
-            'R': (states[i]['R'] @ dR_noise).detach().clone().requires_grad_(),
+            'R': states[i]['R'].detach().clone().requires_grad_(), #'R': pp.SO3(q_xyzw.unsqueeze(0)).detach().clone().requires_grad_(),
             'bias_g': (states[i]['bias_g'] + 0.01 * torch.randn(3, device=device)).requires_grad_(),
             'bias_a': (states[i]['bias_a'] + 0.01 * torch.randn(3, device=device)).requires_grad_(),
             'g': (states[i]['g'] + 0.001 * torch.randn(3, device=device)).requires_grad_()
@@ -125,8 +121,8 @@ def run_experiment(dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps
     best_loss = float('inf')
     epochs_no_improve = 0
 
-
     start_time = time.time()
+
     for epoch in range(1000):
         optimizer.zero_grad()
         loss = 0.0
@@ -258,20 +254,12 @@ def main(dataset_path, output_filename):
     MAX_GPS_MEASUREMENTS = 100
     
     results = []
-    num_repeticiones = 1
-
-    # Repetir experimento base 
-    for _ in range(num_repeticiones):
-        results.append(run_experiment(dataset_path, False, 1, gps_noise_std, MAX_GPS_MEASUREMENTS))
-
-    # Repetir cada configuración con USE_Twb=True 5 veces
+    results.append(run_experiment(dataset_path, False, 1, gps_noise_std, MAX_GPS_MEASUREMENTS))
+    
     for min_gps in [1] + list(range(5, MAX_GPS_MEASUREMENTS, 5)):
-        for _ in range(num_repeticiones):
-            results.append(run_experiment(dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS))
+        results.append(run_experiment(dataset_path,True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS))
 
-    CSV_filename = output_filename + ".csv"
-
-    with open(CSV_filename, 'w', newline='') as csvfile:
+    with open(output_filename, 'w', newline='') as csvfile:
         fieldnames = [
             "USE_Twb", "MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT", "gps_noise_std", "MAX_GPS_MEASUREMENTS",
             "Tiempo total de ejecución", "RMSE posición", "ATE", "RMSE velocidad", "RMSE rotación",
@@ -290,12 +278,12 @@ def main(dataset_path, output_filename):
                     result[key] = "[" + ", ".join(f"{x:.7f}" if isinstance(x, float) else str(x) for x in result[key]) + "]"
             writer.writerow(result)
 
-    print(f"✅ Resultados guardados en '{CSV_filename}'")
+    print(f"✅ Resultados guardados en '{output_filename}'")
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Uso: python experimentos_gps.py <nombre_del_archivo_de_salida>")
+        print("Uso: python experimentos_gps.py <nombre_del_archivo_de_salida.csv>")
     else:
         output_filename = sys.argv[1]
         main(dataset_path, output_filename)

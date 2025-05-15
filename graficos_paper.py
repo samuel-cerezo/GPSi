@@ -8,14 +8,16 @@ mpl.rcParams['font.family'] = 'Times New Roman'
 mpl.rcParams['font.size'] = 16
 
 # Leer CSV
-df = pd.read_csv('MH01-c.csv')
+df = pd.read_csv('MH01.csv')
 
 # Separar los datos
+
+
 df_false = df[df["USE_Twb"] == False]
 df_true = df[df["USE_Twb"] == True]
 
 # Eje x en pasos de 5
-x_ticks = list(range(0, 105, 5))
+x_ticks = list(range(0, 110, 10))
 
 # --------------------- Figure 1: ATE Position ---------------------
 plt.figure(figsize=(8, 6))
