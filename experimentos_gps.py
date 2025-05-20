@@ -11,9 +11,10 @@ from plot_trajectories import *
 from compute_errors import *
 from plot import *
 import matplotlib.pyplot as plt
+from observability_utils import *
 
 #dataset_path = '/Users/samucerezo/dev/src/repos/GPSi/datasets'
-dataset_path = '/home/samuel/dev/repos/GPSi/datasets/EuRoc/V1_03_difficult'
+dataset_path = '/home/samuel/dev/repos/GPSi/datasets/EuRoc/V2_03_difficult'
 gps_noise_std = 0.1
 
 # Función para calcular la distancia recorrida
@@ -24,7 +25,7 @@ def calcular_distancia(gps_measurements):
     return distancia
 
 # Función principal para ejecutar el experimento
-def run_experiment(dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps_noise_std, MAX_GPS_MEASUREMENTS):
+def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename):
     # Aquí debes pegar el contenido de tu main.py
     # Reemplaza las variables globales USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps_noise_std y MAX_GPS_MEASUREMENTS
     # por los argumentos de esta función
@@ -125,7 +126,19 @@ def run_experiment(dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps
     best_loss = float('inf')
     epochs_no_improve = 0
 
+    # ================== DETECCIÓN AUTOMÁTICA DE OBSERVABILIDAD ==================
 
+    #USE_Twb = False  # Se activa dinámicamente
+
+    #activation_frame = find_observability_activation(est_states, data, timestamps, data['imu_time'])
+    activation_frame = find_Twb_activation(output_filename,est_states, gps_measurements, T_w_b, sigma_gps=0.5, threshold=1e-3)
+
+    print(f"Activación sugerida en frame: {activation_frame}")
+    if criteria:
+        MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT = activation_frame
+    else:
+        MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT = 1
+    
     start_time = time.time()
     for epoch in range(1000):
         optimizer.zero_grad()
@@ -239,6 +252,7 @@ def run_experiment(dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps
     
     return {
         "USE_Twb": USE_Twb,
+        "Obs-criteria": criteria,
         "MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT": MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT,
         "gps_noise_std": gps_noise_std,
         "MAX_GPS_MEASUREMENTS": MAX_GPS_MEASUREMENTS,
@@ -259,21 +273,26 @@ def main(dataset_path, output_filename):
     
     results = []
     num_repeticiones = 1
-
+    min_gps = 1
+    criteria = False
+    
     # Repetir experimento base 
-    for _ in range(num_repeticiones):
-        results.append(run_experiment(dataset_path, False, 1, gps_noise_std, MAX_GPS_MEASUREMENTS))
+    #for _ in range(num_repeticiones):
+    #    results.append(run_experiment(dataset_path, False, 1, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename))
 
-    # Repetir cada configuración con USE_Twb=True 5 veces
-    for min_gps in [1] + list(range(5, MAX_GPS_MEASUREMENTS, 5)):
-        for _ in range(num_repeticiones):
-            results.append(run_experiment(dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS))
-
-    CSV_filename = output_filename + ".csv"
+    # Repetir cada configuración con USE_Twb=True 
+    #for min_gps in [1] + list(range(5, MAX_GPS_MEASUREMENTS, 5)):
+    #for _ in range(num_repeticiones):
+    #    results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename))
+            
+    results.append(run_experiment(False, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename))
+    results.append(run_experiment(True, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename))
+          
+    CSV_filename = output_filename + "-obs-criteria.csv"
 
     with open(CSV_filename, 'w', newline='') as csvfile:
         fieldnames = [
-            "USE_Twb", "MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT", "gps_noise_std", "MAX_GPS_MEASUREMENTS",
+            "USE_Twb", "Obs-criteria","MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT", "gps_noise_std", "MAX_GPS_MEASUREMENTS",
             "Tiempo total de ejecución", "RMSE posición", "ATE", "RMSE velocidad", "RMSE rotación",
             "Distancia recorrida", "Transformación rígida (flattened)"
         ]
