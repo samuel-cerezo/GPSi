@@ -1,6 +1,6 @@
-# GPSi: GNSS-Initialization
+# GNSS-inertial state initialization by distance residuals
 
-**GPSi** is a system for tightly coupled **GNSS-Inertial** initialization that leverages inertial preintegration and GPS measurements to estimate the initial velocity, gravity, sensor biases, and extrinsic transformation between the IMU and the global (GNSS) reference frame. The method is designed and implemented in Python.
+This repository contains a novel GNSS-inertial initialization strategy that delays the use of global GNSS measurements until sufficient information is available to accurately estimate the transformation between the GNSS and inertial frames. Instead, the method initially relies on GNSS relative distance residuals. To determine the optimal moment for switching to global measurements, we introduce a criterion based on the evolution of the Hessian matrix singular values. 
 
 🔗 Project page: [samuel-cerezo.github.io/gpsi](https://samuel-cerezo.github.io/gpsi.html)
 
