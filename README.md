@@ -18,23 +18,6 @@ This repository contains a novel GNSS-inertial initialization strategy that dela
 
 In GNSS-denied or degraded environments, it's critical to initialize a tightly coupled navigation system using the minimal set of sensors available. GPSi aims to provide a fast and reliable state estimate without relying on visual features, enabling safe operation and global localization even before visual odometry is available or reliable.
 
-## 🗂️ Repository Structure
-
-```
-GPSi/
-│
-├── scripts/               # Python experiments and optimizer
-├── include/              # C++ headers for IMU preintegration and residuals
-├── src/                  # C++ implementation of closed-form solver
-├── datasets/             # EuRoC/GVINS loaders
-├── results/              # Evaluation results and figures
-├── models.py             # PyTorch-based state representation
-├── residuals.py          # Residuals for optimization (IMU, GPS, etc.)
-├── plot_trajectories.py  # Trajectory visualization utilities
-├── compute_errors.py     # RMSE / ATE computation
-├── CMakeLists.txt        # Build config for C++ module
-└── README.md
-```
 
 ## 📦 Dependencies
 
