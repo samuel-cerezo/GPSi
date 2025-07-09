@@ -39,11 +39,6 @@ GPSi/
 - `numpy`, `matplotlib`, `scipy`, `pandas`
 
 
-Install Python requirements:
-```bash
-pip install -r requirements.txt
-```
-
 ## 📊 Datasets
 
 Supported datasets:
