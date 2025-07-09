@@ -18,6 +18,17 @@ This repository contains a novel GNSS-inertial initialization strategy that dela
 
 In GNSS-denied or degraded environments, it's critical to initialize a tightly coupled navigation system using the minimal set of sensors available. GPSi aims to provide a fast and reliable state estimate without relying on visual features, enabling safe operation and global localization even before visual odometry is available or reliable.
 
+## 🗂️ Repository Structure
+
+```
+GPSi/
+│
+├── scripts/              # Python scripts
+├── src/                  # PyTorch-based state representation, residuals for optimization (IMU, GPS, etc.)
+├── datasets/             # EuRoC/GVINS sequences
+├── results/              # Evaluation results 
+└── README.md
+```
 
 ## 📦 Dependencies
 
