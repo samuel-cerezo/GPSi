@@ -1,7 +1,25 @@
 
 import torch
 import pypose as pp
+import numpy as np
+from scipy.spatial.transform import Rotation as R
 
+def make_SO3_from_numpy(R_np, device='cpu'):
+    """
+    Convierte una matriz de rotación 3x3 a un LieTensor SO3, listo para optimización.
+    """
+    # Convertir a vector de rotación (log SO(3))
+    r = R.from_matrix(R_np)
+    rotvec_np = r.as_rotvec()
+
+    # Crear LieTensor en so(3)
+    omega = torch.tensor(rotvec_np, dtype=torch.float32, device=device)
+    omega_lie = pp.LieTensor(omega, ltype=pp.so3_type)
+
+    # Mapear al grupo con Exp
+    R_so3 = pp.Exp(omega_lie).detach().clone().requires_grad_()
+
+    return R_so3
 
 def expmap_s2(delta):
     """

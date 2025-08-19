@@ -68,8 +68,12 @@ def preintegrate(imu_data, bias_g, bias_a, dt_list, gravity):
         dt = dt_list[k]
         omega = imu_data['gyro'][k] - bias_g
         accel = imu_data['acc'][k] - bias_a
-        
-        dR_k = pp.Exp(omega * dt)
+        if torch.isnan(accel).any() or torch.isnan(omega).any():
+            print(f"[!] NaN en aceleración o giroscopio: accel={accel}, omega={omega}")
+
+        omega_lie = pp.LieTensor(omega * dt, ltype=pp.so3_type)
+        dR_k = pp.Exp(omega_lie)
+
         dR = dR @ dR_k
         a_world = dR @ accel + gravity * dt
         dv += a_world * dt

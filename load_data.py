@@ -40,3 +40,51 @@ def load_euroc_data(path, gps_noise_std=0.1, device='cpu'):
         'gt_bg': gt_bg,
         'gt_ba': gt_ba,
     }
+
+def load_gvins_data(path, gps_noise_std=0.1, device='cpu'):
+    """
+    Carga datos del dataset GVINS desde archivos CSV (exportados de rosbag).
+    Devuelve un dict compatible con la salida de load_euroc_data().
+    """
+    # === GPS como ground-truth aproximado ===
+    gps_df = pd.read_csv(f"{path}/gps_utm.csv")
+    gps_time64 = torch.tensor(gps_df.iloc[:, 0].values, dtype=torch.float64, device=device)
+    gps_time64 = gps_time64 * 1      # ns -> s
+    gps_time = gps_time64.to(dtype=torch.float32)
+    gps_p = torch.tensor(gps_df.iloc[:, 1:4].values, dtype=torch.float32, device=device)
+    gps_v = torch.tensor(gps_df.iloc[:, 4:7].values, dtype=torch.float32, device=device)
+
+    # Shift all positions to make the origin at the first GPS point
+    gps_origin = gps_p[0]
+    gps_p = gps_p - gps_origin
+    gps_p_noisy = gps_p + gps_noise_std * torch.randn_like(gps_p)
+
+    # === Cargar IMU ===
+    imu_df = pd.read_csv(f"{path}/imu.csv")
+    imu_time64 = torch.tensor(imu_df.iloc[:, 0].values, dtype=torch.float64, device=device)
+    imu_time64 = imu_time64 * 1      # ns -> s
+    imu_time = imu_time64.to(dtype=torch.float32)
+    gyro = torch.tensor(imu_df.iloc[:, 1:4].values, dtype=torch.float32, device=device)
+    acc = torch.tensor(imu_df.iloc[:, 4:7].values, dtype=torch.float32, device=device)
+
+    # === Biases constantes ===
+    N = gps_time.shape[0]
+    gt_bg = torch.full((N, 3), 0.001, dtype=torch.float32, device=device)
+    gt_ba = torch.full((N, 3), 0.001, dtype=torch.float32, device=device)
+
+    # === Cuaterniones identidad ===
+    gt_q = torch.zeros((N, 4), dtype=torch.float32, device=device)
+    gt_q[:, 0] = 1.0
+
+    return {
+        'gt_time': gps_time,
+        'gt_p': gps_p,
+        'gt_v': gps_v,
+        'gt_q': gt_q,
+        'gt_bg': gt_bg,
+        'gt_ba': gt_ba,
+        'gps_p': gps_p_noisy,
+        'imu_time': imu_time,
+        'gyro': gyro,
+        'acc': acc,
+    }

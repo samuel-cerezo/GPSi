@@ -12,10 +12,13 @@ from compute_errors import *
 from plot import *
 import matplotlib.pyplot as plt
 from observability_utils import *
+from utils import *
 
 #dataset_path = '/Users/samucerezo/dev/src/repos/GPSi/datasets'
 #dataset_path = '/home/samuel/dev/repos/GPSi/datasets/EuRoc/V2_03_difficult'
+
 dataset_path = '/home/samuel/dev/repos/GPSi/datasets/GVINS/sports_field'
+#dataset_path = '/home/samuel/dev/repos/GPSi/datasets/MARS/HKairport01'
 
 gps_noise_std = 0.1
 
@@ -27,7 +30,7 @@ def calcular_distancia(gps_measurements):
     return distancia
 
 # Función principal para ejecutar el experimento
-def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename):
+def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name):
     # Aquí debes pegar el contenido de tu main.py
     # Reemplaza las variables globales USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT, gps_noise_std y MAX_GPS_MEASUREMENTS
     # por los argumentos de esta función
@@ -48,22 +51,42 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
     bias_a_init = torch.tensor(np.random.normal(0, accel_bias_std, 3), dtype=torch.float32, device=device)
 
     # ========= CARGA DE DATOS =========
-    #data = load_euroc_data(dataset_path, gps_noise_std, device=device)
-    data = load_gvins_data(dataset_path, gps_noise_std, device=device)
   
     # ========= ESTADO INICIAL =========
-    state = {
-        'p': torch.zeros(3, device=device),
-        'v': torch.zeros(3, device=device),
-        'R': pp.identity_SO3(device=device),
-        'bias_g': bias_g_init,
-        'bias_a': bias_a_init,
-        'g': torch.tensor([0, 0, -9.81], device=device)
-    }
-
+    if dataset_name == 'euroc':
+        data = load_euroc_data(dataset_path, gps_noise_std, device=device)
+        state = {
+            'p': torch.zeros(3, device=device),
+            'v': torch.zeros(3, device=device),
+            'R': pp.identity_SO3(device=device),
+            'bias_g': bias_g_init,
+            'bias_a': bias_a_init,
+            'g': torch.tensor([0, 0, -9.81], device=device)
+        }
+    elif dataset_name == 'gvins':
+        data = load_gvins_data(dataset_path, gps_noise_std, device=device)
+        state = {
+            'p': torch.zeros(3, device=device),
+            'v': torch.zeros(3, device=device),
+            'R': pp.identity_SO3(device=device),
+            'bias_g': bias_g_init,
+            'bias_a': bias_a_init,
+            'g': torch.tensor([0, -9.81, 0], device=device)
+        }
+    elif dataset_name == 'mars':
+        data = load_mars_data(dataset_path, device=device)
+        state = {
+            'p': torch.zeros(3, device=device),
+            'v': torch.zeros(3, device=device),
+            'R': pp.identity_SO3(device=device),
+            'bias_g': bias_g_init,
+            'bias_a': bias_a_init,
+            'g': torch.tensor([-9.81, 0, 0], device=device)
+        }
     states = [state]
     timestamps = [data['gt_time'][0]]
     gps_measurements = [data['gps_p'][0]]
+    #print(data)
     gt_velocities = [data['gt_v'][0]]
 
     # ========= PROPAGACIÓN =========
@@ -100,13 +123,27 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
             'g': (states[i]['g'] + 0.001 * torch.randn(3, device=device)).requires_grad_()
         })
 
-
     # ========= TRANSFORMACIÓN GLOBAL T_w_b =========
-    T_w_b = {
-        'R': pp.identity_SO3(device=device).detach().clone().requires_grad_(),
-        't': torch.zeros(3, device=device, requires_grad=True)
-    }
+    if dataset_name == 'euroc':
+        T_w_b = {
+            'R': pp.identity_SO3(device=device).detach().clone().requires_grad_(),
+            't': torch.zeros(3, device=device, requires_grad=True)
+        }
+    elif dataset_name == 'gvins':
+        R_est_np = [
+            [-0.4005,  0.7544,  0.5200],
+            [-0.5016, -0.6555,  0.5646],
+            [ 0.7668, -0.0347,  0.6409],
+        ]
 
+        R_so3 = make_SO3_from_numpy(R_est_np, device=device)
+
+        T_w_b = {
+            'R': make_SO3_from_numpy(R_est_np, device=device).detach(),
+            't': torch.zeros(3, device=device, requires_grad=True)
+        }
+
+    
     # ========= AGREGAR A PARÁMETROS =========
     params = [p['p'] for p in est_states] + [p['v'] for p in est_states] + [p['R'] for p in est_states] + \
             [p['bias_g'] for p in est_states] + [p['bias_a'] for p in est_states] + [p['g'] for p in est_states] + \
@@ -135,8 +172,8 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
 
     #activation_frame = find_observability_activation(est_states, data, timestamps, data['imu_time'])
     activation_frame = find_Twb_activation(output_filename,est_states, gps_measurements, T_w_b, sigma_gps=0.5, threshold=1e-3)
-
     print(f"Activación sugerida en frame: {activation_frame}")
+
     if criteria:
         MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT = activation_frame
     else:
@@ -157,7 +194,11 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
             delta = preintegrate(imu_ij, est_states[i]['bias_g'], est_states[i]['bias_a'],
                                 imu_ij['dt'], gravity=est_states[i]['g'])  #Estos deltas estan en coordenadas de mundo
             dt = dt_gps
-            r_pre = imu_residual_preint(est_states[i], est_states[j], delta, dt)
+            if dataset_name == 'euroc':
+                r_pre = imu_residual_preint(est_states[i], est_states[j], delta, dt)
+            elif dataset_name == 'gvins':
+                r_pre = 0.1*imu_residual_preint(est_states[i], est_states[j], delta, dt)
+
             loss += 100 * (r_pre ** 2).mean()
 
         for k in range(len(est_states) - 1):
@@ -220,17 +261,22 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
     #plot_results(est_states, gps_measurements, data, MAX_GPS_MEASUREMENTS)
 
     est_positions = [s['p'].detach().cpu() for s in est_states]
+    bias_gyr_values = [s['bias_g'].detach().cpu() for s in est_states]
+    gt_bg = [data['gt_bg'][i].detach().cpu() for i in range(len(est_states))]
+
     gt_positions = [data['gt_p'][i].detach().cpu() for i in range(len(est_states))]
 
     est_velocities = [s['v'].detach().cpu() for s in est_states]
     gt_velocities = [v.detach().cpu() for v in gt_velocities]
 
     rmse_pos = compute_rmse(est_positions, gt_positions)
+    rmse_bg = compute_rmse(bias_gyr_values, gt_bg)
     rmse_vel = compute_rmse(est_velocities, gt_velocities)
     ate = compute_ate(est_positions, gt_positions)
     elapsed = time.time() - start_time
     rot_rmse = compute_rotation_rmse(est_states, data['gt_q'][:len(est_states)])
 
+    print(f"✅ RMSE bias_gyr: {rmse_bg:.6f} rad/seg")
     print(f"✅ Tiempo total de ejecución: {elapsed:.6f} sec.")
     print(f"✅ RMSE posición: {rmse_pos:.6f} m")
     print(f"✅ ATE: {ate:.6f} m")
@@ -264,13 +310,14 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
         "ATE": ate,
         "RMSE velocidad": rmse_vel,
         "RMSE rotación": rot_rmse,
+        "RMSE bias gyr": rmse_bg,
         "Distancia recorrida": distancia_recorrida,
         "Transformación rígida (flattened)": T_final.flatten().tolist()
     }
 
 
 # Función principal para ejecutar todos los experimentos y guardar los resultados
-def main(dataset_path, output_filename):
+def main(dataset_path, output_filename, dataset_name):
 
     MAX_GPS_MEASUREMENTS = 100
     
@@ -280,23 +327,29 @@ def main(dataset_path, output_filename):
     criteria = False
     
     # Repetir experimento base 
-    #for _ in range(num_repeticiones):
-    #    results.append(run_experiment(dataset_path, False, 1, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename))
+    for _ in range(num_repeticiones):
+        results.append(run_experiment(criteria,dataset_path, False, 1, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename,dataset_name))
 
     # Repetir cada configuración con USE_Twb=True 
-    #for min_gps in [1] + list(range(5, MAX_GPS_MEASUREMENTS, 5)):
-    #for _ in range(num_repeticiones):
-    #    results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename))
-            
-    results.append(run_experiment(False, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename))
-    results.append(run_experiment(True, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename))
+    for min_gps in [1] + list(range(5, MAX_GPS_MEASUREMENTS, 5)):
+        for _ in range(num_repeticiones):
+            results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
+
+    #min_gps = 1
+    #results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
+    #criteria = True
+    #results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
+
+
+    #results.append(run_experiment(False, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
+    #results.append(run_experiment(True, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
           
-    CSV_filename = output_filename + "-obs-criteria.csv"
+    CSV_filename = output_filename + ".csv"
 
     with open(CSV_filename, 'w', newline='') as csvfile:
         fieldnames = [
             "USE_Twb", "Obs-criteria","MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT", "gps_noise_std", "MAX_GPS_MEASUREMENTS",
-            "Tiempo total de ejecución", "RMSE posición", "ATE", "RMSE velocidad", "RMSE rotación",
+            "Tiempo total de ejecución", "RMSE posición", "ATE", "RMSE velocidad", "RMSE rotación", "RMSE bias gyr",
             "Distancia recorrida", "Transformación rígida (flattened)"
         ]
 
@@ -316,8 +369,9 @@ def main(dataset_path, output_filename):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Uso: python experimentos_gps.py <nombre_del_archivo_de_salida>")
+    if len(sys.argv) != 3:
+        print("Uso: python experimentos_gps.py <euroc/gvins/mars> <nombre_del_archivo_de_salida>")
     else:
-        output_filename = sys.argv[1]
-        main(dataset_path, output_filename)
+        output_filename = sys.argv[2]
+        dataset_name = sys.argv[1]
+        main(dataset_path, output_filename, dataset_name)

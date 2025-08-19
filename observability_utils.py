@@ -131,7 +131,7 @@ def plot_Twb_relative_derivative(output_filename, derivative_history, activation
     log_deriv = np.log10(smoothed_derivative)
 
     # Plot log10
-    plt.plot(k_values[:10], log_deriv[:10], color='red', linewidth=2.5, label=r'${\Delta\rho_k}$ (seq. '+ output_filename+')')
+    plt.plot(k_values[:20], log_deriv[:20], color='red', linewidth=2.5, label=r'${\Delta\rho_k}$ (seq. '+ output_filename+')')
     plt.axhline(y=np.log10(1e-2), color='blue', linestyle=':', linewidth=2.5, label = r'${\Delta{\rho}}_{th}$')
 
     # Ejes
