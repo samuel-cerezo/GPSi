@@ -34,3 +34,4 @@ def expmap_s2(delta):
     axis = axis / axis.norm()
     R = pp.SO3.Exp(axis * theta)
     return R(torch.tensor([0.0, 0.0, 1.0], device=delta.device))  # z-axis nominal gravity
+

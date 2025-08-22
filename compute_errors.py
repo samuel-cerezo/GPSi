@@ -116,3 +116,39 @@ def compute_rotation_rmse(est_states, gt_quaternions):
     errors = torch.stack(angles)
     return torch.sqrt(torch.mean(errors ** 2)).item()
 
+def _wrap(a):
+    return torch.atan2(torch.sin(a), torch.cos(a))
+
+def compute_yaw_rmse(est_states, gt_quats,
+                   gt_is_xyzw=True,      # <- en tu caso: False (asis)
+                   use_Rest_T=True,      # <- en tu caso: True
+                   apply_piZ_on_Rest=True):  # <- en tu caso: True
+    # apila R_est
+    Rests = []
+    for s in est_states:
+        R = s['R'].matrix()
+        Rests.append(torch.as_tensor(R, dtype=torch.float64))
+    Rests = torch.stack(Rests, 0)  # [N,3,3]
+
+    # flip pi en Z si corresponde (diag(-1,-1,1))
+    if apply_piZ_on_Rest:
+        Rfix_piZ = torch.diag(torch.tensor([-1.0, -1.0, 1.0], dtype=torch.float64))
+        Rests = Rests @ Rfix_piZ
+
+    # construye R_gt (no reordenes si ya está en [x,y,z,w])
+    Rgts = []
+    for q in gt_quats:
+        q = torch.as_tensor(q, dtype=torch.float64)
+        if gt_is_xyzw:
+            # si fuera [w,x,y,z], reordenar -> [x,y,z,w]
+            q = torch.cat([q[1:], q[0:1]])
+        Rgts.append(pp.SO3(q.unsqueeze(0)).matrix()[0])
+    Rgts = torch.stack(Rgts, 0)
+
+    # ΔR según convención elegida
+    dRs = (Rests.transpose(1,2) @ Rgts) if use_Rest_T else (Rests @ Rgts.transpose(1,2))
+
+    # yaw de ΔR, envuelto
+    dyaw = _wrap(torch.atan2(dRs[:,1,0], dRs[:,0,0]))  # rad
+    rmse = torch.sqrt(torch.mean(dyaw**2))
+    return float(torch.rad2deg(rmse))  # devuelve ESCALAR (float)

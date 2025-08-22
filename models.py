@@ -223,7 +223,7 @@ def add_gps_anchor_residual(loss, est_states, gps_measurements, k0, window_size=
     loss += weight * (r_anchor ** 2).mean()
     return loss
 
-def kalman_filter_gps(gps_measurements, gps_var, dt=0.01):
+def smoothing(gps_measurements, gps_var, dt=0.01):
     device = gps_measurements[0].device
     n = len(gps_measurements)
 

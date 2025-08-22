@@ -16,8 +16,9 @@ from utils import *
 
 #dataset_path = '/Users/samucerezo/dev/src/repos/GPSi/datasets'
 #dataset_path = '/home/samuel/dev/repos/GPSi/datasets/EuRoc/V2_03_difficult'
+dataset_path = '/Users/samucerezo/dev/src/GPSi/datasets/EuRoc/MH_01'
 
-dataset_path = '/home/samuel/dev/repos/GPSi/datasets/GVINS/sports_field'
+#dataset_path = '/home/samuel/dev/repos/GPSi/datasets/GVINS/sports_field'
 #dataset_path = '/home/samuel/dev/repos/GPSi/datasets/MARS/HKairport01'
 
 gps_noise_std = 0.1
@@ -152,7 +153,7 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
     optimizer = torch.optim.Adam(params, lr=1e-2)
 
     dt_gps = (data['gt_time'][1] - data['gt_time'][0]).item()
-    smoothed_gps = kalman_filter_gps(gps_measurements, gps_noise_std, dt_gps)
+    smoothed_gps = smoothing(gps_measurements, gps_noise_std, dt_gps)
 
     gps_measurements = torch.stack(gps_measurements)
 
@@ -176,8 +177,8 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
 
     if criteria:
         MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT = activation_frame
-    else:
-        MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT = 1
+    #else:
+    #    MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT = 1
     
     start_time = time.time()
     for epoch in range(1000):
@@ -185,7 +186,7 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
         loss = 0.0
         alpha_gps = 1
 
-        smoothed_gps = kalman_filter_gps(gps_measurements, gps_noise_std, dt_gps)
+        smoothed_gps = smoothing(gps_measurements, gps_noise_std, dt_gps)
         
         for k in range(len(states) - 1):
             i, j = k, k + 1
@@ -275,7 +276,9 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
     ate = compute_ate(est_positions, gt_positions)
     elapsed = time.time() - start_time
     rot_rmse = compute_rotation_rmse(est_states, data['gt_q'][:len(est_states)])
-
+    yaw_rmse = compute_yaw_rmse(est_states, data['gt_q'][:len(est_states)],
+                          gt_is_xyzw=False, use_Rest_T=True, apply_piZ_on_Rest=True)
+    print(f"✅ Error en yaw: {yaw_rmse:.6f} degrees")
     print(f"✅ RMSE bias_gyr: {rmse_bg:.6f} rad/seg")
     print(f"✅ Tiempo total de ejecución: {elapsed:.6f} sec.")
     print(f"✅ RMSE posición: {rmse_pos:.6f} m")
@@ -311,6 +314,7 @@ def run_experiment(criteria, dataset_path,USE_Twb, MIN_GPS_MEASUREMENTS_FOR_ALIG
         "RMSE velocidad": rmse_vel,
         "RMSE rotación": rot_rmse,
         "RMSE bias gyr": rmse_bg,
+        "yaw error": yaw_rmse,
         "Distancia recorrida": distancia_recorrida,
         "Transformación rígida (flattened)": T_final.flatten().tolist()
     }
@@ -336,9 +340,9 @@ def main(dataset_path, output_filename, dataset_name):
             results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
 
     #min_gps = 1
-    #results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
-    #criteria = True
-    #results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
+    results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
+    criteria = True
+    results.append(run_experiment(criteria, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
 
 
     #results.append(run_experiment(False, dataset_path, True, min_gps, gps_noise_std, MAX_GPS_MEASUREMENTS,output_filename, dataset_name))
@@ -349,7 +353,7 @@ def main(dataset_path, output_filename, dataset_name):
     with open(CSV_filename, 'w', newline='') as csvfile:
         fieldnames = [
             "USE_Twb", "Obs-criteria","MIN_GPS_MEASUREMENTS_FOR_ALIGNMENT", "gps_noise_std", "MAX_GPS_MEASUREMENTS",
-            "Tiempo total de ejecución", "RMSE posición", "ATE", "RMSE velocidad", "RMSE rotación", "RMSE bias gyr",
+            "Tiempo total de ejecución", "RMSE posición", "ATE", "RMSE velocidad", "RMSE rotación", "RMSE bias gyr", "yaw error",
             "Distancia recorrida", "Transformación rígida (flattened)"
         ]
 
