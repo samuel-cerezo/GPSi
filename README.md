@@ -1,4 +1,4 @@
-# GNSS-inertial state initialization by distance residuals
+# GNSS-Inertial State Initialization Using Inter-Epoch Baseline Residuals
 
 This repository contains a novel GNSS-inertial initialization strategy that delays the use of global GNSS measurements until sufficient information is available to accurately estimate the transformation between the GNSS and inertial frames. Instead, the method initially relies on GNSS relative distance residuals. To determine the optimal moment for switching to global measurements, we introduce a criterion based on the evolution of the Hessian matrix singular values. 
 
