@@ -5,3 +5,7 @@
 /images
 /old_scripts
 /results
+__pycache__/
+*.pyc
+/paper_outputs
+*.egg-info/

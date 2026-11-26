@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  cpu-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CUDA_VISIBLE_DEVICES: ""
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Check that the code runs on CPU
+        run: python -c "import torch; print('torch', torch.__version__, 'cuda available:', torch.cuda.is_available())"
+      - name: Run tests
+        run: pytest -v
+      - name: Smoke test of the entry point (synthetic data)
+        run: python run_experiments.py --dataset synthetic --max-gps 10 --max-epochs 5 --device auto
