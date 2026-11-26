@@ -19,10 +19,15 @@ import os
 import sys
 import warnings
 
-from gpsi.data import DEFAULT_TIME_MODE, TIME_MODES
-from gpsi.device import get_device
-from gpsi.experiments import resolve_sequences, run_sequence, write_results_csv
-from gpsi.method import InitConfig, run_initialization
+# Silence noisy third-party warnings (torch.jit deprecation, PyPose shape notices).
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+warnings.filterwarnings("ignore", message="Tensor Shape Invalid")
+
+from gpsi.data import DEFAULT_TIME_MODE, TIME_MODES  # noqa: E402
+from gpsi.device import get_device  # noqa: E402
+from gpsi.experiments import resolve_sequences, run_sequence, write_results_csv  # noqa: E402
+from gpsi.method import InitConfig, run_initialization  # noqa: E402
 
 DEFAULT_ROOTS = {"euroc": "datasets/EuRoC", "gvins": "datasets/GVINS", "mars": "datasets/MARS"}
 
@@ -58,7 +63,6 @@ def parse_args(argv=None):
 
 
 def main(argv=None):
-    warnings.filterwarnings("ignore", category=FutureWarning)
     args = parse_args(argv)
     device = get_device(args.device)
     print(f"[gpsi] device: {device}")
